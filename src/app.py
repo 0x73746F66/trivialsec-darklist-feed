@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pydantic.error_wrappers import ValidationError
 
@@ -20,14 +20,23 @@ def pre_process(contents: str) -> list[models.Darklist]:
         ip_address = line.strip()
         if not ip_address:
             continue
-        if '/' in line:
-            continue
         try:
-            results.append(models.Darklist(
-                ip_address=ip_address.strip(),
-                last_seen=datetime.utcnow(),
-                category='sshclient',
-            ))
+            if '/' in line:
+                results.append(
+                    models.Darklist(
+                        cidr=line,
+                        last_seen=datetime.now(timezone.utc),
+                        category='sshclient',
+                    )
+                )
+            else:
+                results.append(
+                    models.Darklist(
+                        ip_address=ip_address,
+                        last_seen=datetime.now(timezone.utc),
+                        category='sshclient',
+                    )
+                )
         except ValidationError as err:
             internals.logger.warning(err, exc_info=True)
             internals.logger.warning(line)
@@ -55,15 +64,26 @@ def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[
         state.url = feed.url
         state.records = {}
         for item in feed_items:
-            state.records[str(item.ip_address)] = models.FeedStateItem(
-                key=str(item.ip_address),
-                data=item,
-                data_model='Darklist',
-                first_seen=item.last_seen,
-                current=True,
-                entrances=[],
-                exits=[],
-            )
+            if item.ip_address:
+                state.records[str(item.ip_address)] = models.FeedStateItem(
+                    key=str(item.ip_address),
+                    data=item,
+                    data_model='Darklist',
+                    first_seen=item.last_seen,
+                    current=True,
+                    entrances=[],
+                    exits=[],
+                )
+            if item.cidr:
+                state.records[str(item.cidr)] = models.FeedStateItem(
+                    key=str(item.cidr),
+                    data=item,
+                    data_model='Darklist',
+                    first_seen=item.last_seen,
+                    current=True,
+                    entrances=[],
+                    exits=[],
+                )
 
     # step 1, exit any records that no longer appear in the feed
     internals.logger.info("process step 1 exit records")
@@ -79,42 +99,42 @@ def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[
     entrants = []
     internals.logger.info("process step 2 process new entrants")
     for feed_item in feed_items:
-        if item := state.records.get(str(feed_item.ip_address)):
+        key = feed_item.cidr or feed_item.ip_address
+        if item := state.records.get(str(key)):
             if item.current:
                 continue
             item.current = True
-            item.entrances.append(datetime.utcnow())
-            state.records[item.key] = item
+            item.entrances.append(datetime.now(timezone.utc))
         else:
             item = models.FeedStateItem(
-                key=str(feed_item.ip_address),
+                key=str(key),
                 data=feed_item,
                 data_model='Darklist',
-                first_seen=datetime.utcnow(),
+                first_seen=datetime.now(timezone.utc),
                 current=True,
-                entrances=[datetime.utcnow()],
+                entrances=[datetime.now(timezone.utc)],
                 exits=[],
             )
-            state.records[item.key] = item
+        state.records[item.key] = item
         entrants.append(item)
 
     # step 3, persist state
     internals.logger.info("process step 3 persist state")
-    state.last_checked = datetime.utcnow()
+    state.last_checked = datetime.now(timezone.utc)
     state.save()
     internals.logger.info(f"Detected {len(entrants)} new entrants")
     return entrants
 
 
 def handler(event, context):
-    start = datetime.utcnow()
+    start = datetime.now(timezone.utc)
     for feed in config.feeds:
         results = fetch(feed)
         if not results:
             continue
-        # services.aws.delete_s3(f"{internals.APP_ENV}/feeds/darklist.de/{feed.name}/state.json")
+        # services.aws.delete_s3(f"{internals.APP_ENV}/feeds/{feed.source}/{feed.name}/state.json")
         services.aws.store_s3(
-            path_key=f"{internals.APP_ENV}/feeds/darklist.de/{feed.name}/{start.strftime('%Y%m%d%H')}.json",
+            path_key=f"{internals.APP_ENV}/feeds/{feed.source}/{feed.name}/{start.strftime('%Y%m%d%H')}.json",
             value=json.dumps(results, default=str)
         )
         for state_item in process(feed, results):

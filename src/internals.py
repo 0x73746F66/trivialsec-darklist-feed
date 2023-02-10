@@ -6,7 +6,6 @@ import hmac
 import hashlib
 import threading
 import json
-from tempfile import NamedTemporaryFile
 from pathlib import Path
 import errno
 from os import path, getenv
@@ -18,6 +17,8 @@ from urllib.parse import urlparse
 from ipaddress import (
     IPv4Address,
     IPv6Address,
+    IPv4Network,
+    IPv6Network,
 )
 
 import boto3
@@ -239,6 +240,8 @@ class JSONEncoder(json.JSONEncoder):
                 AnyHttpUrl,
                 IPv4Address,
                 IPv6Address,
+                IPv4Network,
+                IPv6Network,
                 EmailStr,
             ),
         ):
@@ -251,7 +254,7 @@ class JSONEncoder(json.JSONEncoder):
 
 def _request_task(url, body, headers):
     try:
-        requests.post(url, data=json.dumps(body, cls=JSONEncoder), headers=headers, timeout=(5, 15))
+        requests.post(url, data=json.dumps(body, cls=JSONEncoder), headers=headers, timeout=(15, 30))
     except requests.exceptions.ConnectionError:
         pass
 
