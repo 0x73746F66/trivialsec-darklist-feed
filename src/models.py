@@ -1,5 +1,5 @@
 import json
-from ipaddress import IPv4Address, IPv6Address, IPv4Network
+from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from abc import ABCMeta, abstractmethod
 from typing import Union, Any, Optional
 from datetime import datetime, timezone
@@ -33,7 +33,7 @@ class DAL(metaclass=ABCMeta):
 
 class Darklist(BaseModel):
     ip_address: Optional[Union[IPv4Address, IPv6Address]]
-    cidr: Optional[IPv4Network]
+    cidr: Optional[Union[IPv4Network, IPv6Network]]
     last_seen: datetime
     category: str
 

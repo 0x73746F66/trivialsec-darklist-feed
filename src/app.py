@@ -9,7 +9,7 @@ import models
 import services.aws
 
 
-def pre_process(contents: str) -> list[models.Darklist]:
+def pre_process(contents: str, category: str) -> list[models.Darklist]:
     internals.logger.debug("pre_process")
     results = []
     if not contents:
@@ -26,7 +26,7 @@ def pre_process(contents: str) -> list[models.Darklist]:
                     models.Darklist(
                         cidr=line,
                         last_seen=datetime.now(timezone.utc),
-                        category='sshclient',
+                        category=category,
                     )
                 )
             else:
@@ -34,7 +34,7 @@ def pre_process(contents: str) -> list[models.Darklist]:
                     models.Darklist(
                         ip_address=ip_address,
                         last_seen=datetime.now(timezone.utc),
-                        category='sshclient',
+                        category=category,
                     )
                 )
         except ValidationError as err:
@@ -57,7 +57,7 @@ def fetch(feed: models.FeedConfig) -> list[models.Darklist]:
 
 
 def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[models.FeedStateItem]:
-    state = models.FeedState(source='darklist.de', feed_name=feed.name)
+    state = models.FeedState(source=feed.source, feed_name=feed.name)
     # step 0, initial ONLY block
     if not state.load():
         internals.logger.warning("process step 0 initial ONLY")
