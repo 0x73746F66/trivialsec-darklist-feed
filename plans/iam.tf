@@ -1,7 +1,7 @@
 data "aws_iam_policy_document" "feed_processor_darklist_assume_role_policy" {
   statement {
-    sid = "${var.app_env}TrivialScannerFeedProcessorDarklistAssumeRole"
-    actions    = ["sts:AssumeRole"]
+    sid     = "${var.app_env}TrivialScannerFeedProcessorDarklistAssumeRole"
+    actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
@@ -11,7 +11,7 @@ data "aws_iam_policy_document" "feed_processor_darklist_assume_role_policy" {
 data "aws_iam_policy_document" "feed_processor_darklist_iam_policy" {
   statement {
     sid = "${var.app_env}TrivialScannerFeedProcessorDarklistLogging"
-    actions   = [
+    actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents"
@@ -22,7 +22,7 @@ data "aws_iam_policy_document" "feed_processor_darklist_iam_policy" {
   }
   statement {
     sid = "${var.app_env}TrivialScannerFeedProcessorDarklistObjList"
-    actions   = [
+    actions = [
       "s3:Head*",
       "s3:List*",
     ]
@@ -33,7 +33,7 @@ data "aws_iam_policy_document" "feed_processor_darklist_iam_policy" {
   }
   statement {
     sid = "${var.app_env}TrivialScannerFeedProcessorDarklistObjAccess"
-    actions   = [
+    actions = [
       "s3:DeleteObject",
       "s3:GetObject",
       "s3:PutObject",
@@ -44,7 +44,7 @@ data "aws_iam_policy_document" "feed_processor_darklist_iam_policy" {
   }
   statement {
     sid = "${var.app_env}TrivialScannerFeedProcessorDarklistSecrets"
-    actions   = [
+    actions = [
       "ssm:GetParameter",
     ]
     resources = [
@@ -53,7 +53,7 @@ data "aws_iam_policy_document" "feed_processor_darklist_iam_policy" {
   }
   statement {
     sid = "${var.app_env}DarklistEWSQueueSQS"
-    actions   = [
+    actions = [
       "sqs:SendMessage",
       "sqs:ChangeMessageVisibility",
       "sqs:Get*",
@@ -71,9 +71,9 @@ resource "aws_iam_role" "feed_processor_darklist_role" {
   }
 }
 resource "aws_iam_policy" "feed_processor_darklist_policy" {
-  name        = "${lower(var.app_env)}_feed_processor_darklist_lambda_policy"
-  path        = "/"
-  policy      = data.aws_iam_policy_document.feed_processor_darklist_iam_policy.json
+  name   = "${lower(var.app_env)}_feed_processor_darklist_lambda_policy"
+  path   = "/"
+  policy = data.aws_iam_policy_document.feed_processor_darklist_iam_policy.json
 }
 resource "aws_iam_role_policy_attachment" "policy_attach" {
   role       = aws_iam_role.feed_processor_darklist_role.name
