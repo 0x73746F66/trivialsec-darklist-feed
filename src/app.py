@@ -52,15 +52,15 @@ def fetch(feed: models.FeedConfig) -> list[models.Darklist]:
         return []
     file_path = internals.download_file(feed.url)
     if file_path.exists():
-        return pre_process(file_path.read_text(encoding='utf8'))
+        return pre_process(file_path.read_text(encoding='utf8'), feed.name)
     return []
 
 
 def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[models.FeedStateItem]:
     state = models.FeedState(source=feed.source, feed_name=feed.name)
-    # step 0, initial ONLY block
+    # initial ONLY block
     if not state.load():
-        internals.logger.warning("process step 0 initial ONLY")
+        internals.logger.warning("process initial ONLY")
         state.url = feed.url
         state.records = {}
         for item in feed_items:
@@ -85,19 +85,14 @@ def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[
                     exits=[],
                 )
 
-    # step 1, exit any records that no longer appear in the feed
-    internals.logger.info("process step 1 exit records")
-    feed_index = set()
-    for item in feed_items:
-        feed_index.add(str(item.ip_address))
-
+    internals.logger.info("process exit records")
+    feed_index = {str(feed_item.ip_address) for feed_item in feed_items}
     for state_item in state.records.keys():
         if state_item not in feed_index:
             state.exit(state_item)
 
-    # step 2, process new entrants
     entrants = []
-    internals.logger.info("process step 2 process new entrants")
+    internals.logger.info("process new entrants")
     for feed_item in feed_items:
         key = feed_item.cidr or feed_item.ip_address
         if item := state.records.get(str(key)):
@@ -118,8 +113,7 @@ def process(feed: models.FeedConfig, feed_items: list[models.Darklist]) -> list[
         state.records[item.key] = item
         entrants.append(item)
 
-    # step 3, persist state
-    internals.logger.info("process step 3 persist state")
+    internals.logger.info("persist state")
     state.last_checked = datetime.now(timezone.utc)
     state.save()
     internals.logger.info(f"Detected {len(entrants)} new entrants")
