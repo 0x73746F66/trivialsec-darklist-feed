@@ -1,4 +1,5 @@
 # pylint: disable=no-self-argument, arguments-differ
+import contextlib
 from base64 import urlsafe_b64encode
 import re
 import logging
@@ -6,8 +7,9 @@ import hmac
 import hashlib
 import threading
 import json
-from pathlib import Path
 import errno
+from pathlib import Path
+from uuid import UUID
 from os import path, getenv
 from socket import error as SocketError
 from typing import Union
@@ -33,18 +35,20 @@ from pydantic import (
 )
 
 
+DARKLIST_NAMESPACE = UUID('37081b5f-fd40-405b-bf6b-0cae6e69efc8')
 DEFAULT_LOG_LEVEL = logging.WARNING
 LOG_LEVEL = getenv("LOG_LEVEL", 'WARNING')
 CACHE_DIR = getenv("CACHE_DIR", "/tmp")
 BUILD_ENV = getenv("BUILD_ENV", "development")
 JITTER_SECONDS = int(getenv("JITTER_SECONDS", default="30"))
 APP_ENV = getenv("APP_ENV", "Dev")
-APP_NAME = getenv("APP_NAME", "trivialscan-monitor-queue")
+APP_NAME = getenv("APP_NAME", "feed-processor-darklist")
 DASHBOARD_URL = "https://www.trivialsec.com"
 logger = logging.getLogger(__name__)
 if getenv("AWS_EXECUTION_ENV") is not None:
     boto3.set_stream_logger('boto3', getattr(logging, LOG_LEVEL, DEFAULT_LOG_LEVEL))
 logger.setLevel(getattr(logging, LOG_LEVEL, DEFAULT_LOG_LEVEL))
+logging.getLogger('urllib3').setLevel(logging.ERROR)
 
 
 def parse_authorization_header(authorization_header: str) -> dict[str, str]:
@@ -91,39 +95,39 @@ class HMAC:
     @property
     def scheme(self) -> Union[str, None]:
         return (
-            None
-            if not hasattr(self, "parsed_header")
-            else self.parsed_header.get("scheme")
+            self.parsed_header.get("scheme")
+            if hasattr(self, "parsed_header")
+            else None
         )
 
     @property
     def id(self) -> Union[str, None]:
-        return (
-            None if not hasattr(self, "parsed_header") else self.parsed_header.get("id")
-        )
+        return self.parsed_header.get("id") if hasattr(self, "parsed_header") else None
 
     @property
     def ts(self) -> Union[int, None]:
-        return None if not hasattr(self, "parsed_header") else int(self.parsed_header.get("ts"))  # type: ignore
+        return (
+            int(self.parsed_header.get("ts"))
+            if hasattr(self, "parsed_header")
+            else None
+        )
 
     @property
     def mac(self) -> Union[str, None]:
         return (
-            None
-            if not hasattr(self, "parsed_header")
-            else self.parsed_header.get("mac")
+            self.parsed_header.get("mac")
+            if hasattr(self, "parsed_header")
+            else None
         )
 
     @property
     def canonical_string(self) -> str:
         parsed_url = urlparse(self.request_url)
         port = 443 if parsed_url.port is None else parsed_url.port
-        bits = []
-        bits.append(self.request_method.upper())
-        bits.append(parsed_url.hostname.lower())  # type: ignore
-        bits.append(str(port))
-        bits.append(parsed_url.path)
-        bits.append(str(self.ts))
+        bits = [self.request_method.upper()]
+        bits.extend(
+            (parsed_url.hostname.lower(), str(port), parsed_url.path, str(self.ts))
+        )
         if self.contents:
             bits.append(b64encode(self.contents.encode("utf8")).decode("utf8"))
         return "\n".join(bits)
@@ -143,7 +147,11 @@ class HMAC:
         self.contents = raw_body
         self.request_method: str = method
         self.request_url: str = request_url
-        self.algorithm: str = self.default_algorithm if not self.supported_algorithms.get(algorithm) else algorithm  # type: ignore
+        self.algorithm: str = (
+            algorithm
+            if self.supported_algorithms.get(algorithm)
+            else self.default_algorithm
+        )
         self._expire_after_seconds: int = expire_after_seconds
         self._not_before_seconds: int = not_before_seconds
         self.parsed_header: dict[str, str] = parse_authorization_header(
@@ -242,6 +250,7 @@ class JSONEncoder(json.JSONEncoder):
                 IPv6Address,
                 IPv4Network,
                 IPv6Network,
+                UUID,
                 EmailStr,
             ),
         ):
@@ -253,27 +262,33 @@ class JSONEncoder(json.JSONEncoder):
 
 
 def _request_task(url, body, headers):
-    try:
+    with contextlib.suppress(requests.exceptions.ConnectionError):
         requests.post(url, data=json.dumps(body, cls=JSONEncoder), headers=headers, timeout=(15, 30))
-    except requests.exceptions.ConnectionError:
-        pass
 
 
-def post_beacon(url: HttpUrl, body: dict, headers: dict = {"Content-Type": "application/json"}):
+def post_beacon(url: HttpUrl, body: dict, headers: dict = None):
     """
     A beacon is a fire and forget HTTP POST, the response is not
     needed so we do not even wait for one, so there is no
     response to discard because it was never received
     """
+    if headers is None:
+        headers = {"Content-Type": "application/json"}
     threading.Thread(target=_request_task, args=(url, body, headers)).start()
-
 
 
 @retry((SocketError), tries=3, delay=1.5, backoff=1)
 def download_file(remote_file: str, temp_dir: str = CACHE_DIR) -> Path:
     session = requests.Session()
     remote_file = remote_file.replace(":80/", "/").replace(":443/", "/")
-    resp = session.head(remote_file, verify=remote_file.startswith('https'), allow_redirects=True, timeout=2)
+    logger.info(f"[bold]Downloading[/bold] {remote_file}")
+    resp = session.get(
+        remote_file,
+        verify=remote_file.startswith('https'),
+        allow_redirects=True,
+        timeout=30,
+        headers={'User-Agent': "trivialsec.com"}
+    )
     if not str(resp.status_code).startswith('2'):
         if resp.status_code == 403:
             logger.warning(f"Forbidden {remote_file}")
@@ -299,9 +314,7 @@ def download_file(remote_file: str, temp_dir: str = CACHE_DIR) -> Path:
         try:
             local_size = path.getsize(temp_path)
         except OSError as err:
-            if err.errno == errno.ENOENT:
-                pass  # no need to raise or handle this
-            else:
+            if err.errno != errno.ENOENT:
                 raise
         if local_size == file_size:
             logger.info(f"[bold]Not Modified[/bold] {temp_path}")
@@ -316,13 +329,6 @@ def download_file(remote_file: str, temp_dir: str = CACHE_DIR) -> Path:
             logger.info(f"[bold]Cached[/bold] {temp_path}")
             return Path(temp_path)
 
-    logger.info(f"[bold]Downloading[/bold] {remote_file}")
-    resp = session.get(
-        remote_file,
-        verify=remote_file.startswith('https'),
-        allow_redirects=True,
-        headers={'User-Agent': "trivialsec.com"}
-    )
     handle = Path(temp_path)
     handle.write_text(resp.text, encoding='utf8')
     if etag:
