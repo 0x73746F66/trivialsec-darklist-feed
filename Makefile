@@ -80,6 +80,7 @@ apply: ## tf apply -auto-approve -refresh=true
 	terraform -chdir=plans apply -auto-approve -refresh=true .tfplan
 
 destroy: init ## tf destroy -auto-approve
+	terraform -chdir=plans fmt
 	terraform -chdir=plans validate
 	terraform -chdir=plans plan -destroy -no-color -out=.tfdestroy
 	terraform -chdir=plans show --json .tfdestroy | jq -r '([.resource_changes[]?.change.actions?]|flatten)|{"create":(map(select(.=="create"))|length),"update":(map(select(.=="update"))|length),"delete":(map(select(.=="delete"))|length)}' > plans/tfdestroy.json
