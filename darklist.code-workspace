@@ -53,6 +53,7 @@
             "cachier",
             "darklist",
             "fastapi",
+            "lumigo",
             "NOSONAR",
             "pydantic",
             "sendgrid",

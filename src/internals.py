@@ -1,6 +1,5 @@
 # pylint: disable=no-self-argument, arguments-differ
 import contextlib
-from base64 import urlsafe_b64encode
 import re
 import logging
 import hmac
@@ -13,7 +12,7 @@ from uuid import UUID
 from os import path, getenv
 from socket import error as SocketError
 from typing import Union
-from base64 import b64encode
+from base64 import b64encode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 from ipaddress import (
@@ -63,7 +62,7 @@ def parse_authorization_header(authorization_header: str) -> dict[str, str]:
             if not pairs or auth_param_re.match(pairs[-1]):  # type: ignore
                 pairs.append(pair)
             else:
-                pairs[-1] = pairs[-1] + "," + pair
+                pairs[-1] = f"{pairs[-1]},{pair}"
         if not auth_param_re.match(pairs[-1]):  # type: ignore
             raise ValueError("Malformed auth parameters")
     for pair in pairs:
@@ -95,22 +94,20 @@ class HMAC:
     @property
     def scheme(self) -> Union[str, None]:
         return (
-            self.parsed_header.get("scheme")
-            if hasattr(self, "parsed_header")
-            else None
+            None
+            if not hasattr(self, "parsed_header")
+            else self.parsed_header.get("scheme")
         )
 
     @property
     def id(self) -> Union[str, None]:
-        return self.parsed_header.get("id") if hasattr(self, "parsed_header") else None
+        return (
+            None if not hasattr(self, "parsed_header") else self.parsed_header.get("id")
+        )
 
     @property
     def ts(self) -> Union[int, None]:
-        return (
-            int(self.parsed_header.get("ts"))
-            if hasattr(self, "parsed_header")
-            else None
-        )
+        return None if not hasattr(self, "parsed_header") else int(self.parsed_header.get("ts"))  # type: ignore
 
     @property
     def mac(self) -> Union[str, None]:
@@ -278,7 +275,7 @@ def post_beacon(url: HttpUrl, body: dict, headers: dict = None):
 
 
 @retry((SocketError), tries=5, delay=1.5, backoff=1)
-def download_file(remote_file: str, temp_dir: str = CACHE_DIR) -> Path:
+def download_file(remote_file: str, temp_dir: str = CACHE_DIR) -> Union[Path, None]:
     session = requests.Session()
     remote_file = remote_file.replace(":80/", "/").replace(":443/", "/")
     logger.info(f"[bold]Downloading[/bold] {remote_file}")
