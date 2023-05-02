@@ -78,7 +78,8 @@ def handler(event, context):
         if not last_contents:
             last_contents = ''
             # split contents in half, all are being processed the first time
-            contents = contents.splitlines()[:round(len(contents.splitlines())/2)]
+            contents = "\n".join(contents.splitlines()[:round(len(contents.splitlines())/2)])
+            internals.logger.info(f"halving to {round(len(contents.splitlines())/2)} lines -> {feed.name}")
         queued = 0
         for ip_address in compare_contents(last_contents, contents):
             now = datetime.now(timezone.utc).replace(microsecond=0)
