@@ -24,6 +24,7 @@ from ipaddress import (
 
 import boto3
 import requests
+from lumigo_tracer import add_execution_tag
 from retry.api import retry
 from pydantic import (
     HttpUrl,
@@ -272,6 +273,23 @@ def post_beacon(url: HttpUrl, body: dict, headers: dict = None):
     if headers is None:
         headers = {"Content-Type": "application/json"}
     threading.Thread(target=_request_task, args=(url, body, headers)).start()
+
+
+def trace_tag(data: dict[str, str]):
+    if not isinstance(data, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in data.items()
+    ):
+        raise ValueError(data)
+    for key, value in data.items():
+        if len(key) > 50:
+            logger.warning(f"Trace key must be less than 50 for: {value} See: https://docs.lumigo.io/docs/execution-tags#execution-tags-naming-limits-and-requirements")
+        if len(value) > 70:
+            logger.warning(f"Trace value must be less than 70 for: {value} See: https://docs.lumigo.io/docs/execution-tags#execution-tags-naming-limits-and-requirements")
+    if getenv("AWS_EXECUTION_ENV") is None or APP_ENV != "Prod":
+        return
+    for key, value in data.items():
+        add_execution_tag(key[:50], value=value[:70])
 
 
 @retry((SocketError), tries=5, delay=1.5, backoff=1)

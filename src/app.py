@@ -47,13 +47,19 @@ def compare_contents(old_contents: str, new_contents: str):
     verbose=internals.APP_ENV != "Prod"
 )
 def handler(event, context):
+    internals.trace_tag({
+        "source": event["source"],
+        "resources": ",".join([
+            e.split(":")[-1] for e in event["resources"]
+        ]),
+    })
     instance_date = datetime.now(timezone.utc).strftime('%Y%m%d%H')
     results = 0
     for feed in config.feeds:
         if feed.disabled:
             internals.logger.info(f"{feed.name} [magenta]disabled[/magenta]")
             continue
-
+        internals.trace_tag({"feed_name": feed.name})
         object_prefix = f"{internals.APP_ENV}/feeds/{feed.source}/{feed.name}/"
         # services.aws.delete_s3(f"{object_prefix}latest.txt")
         last_contents = services.aws.get_s3(path_key=f"{object_prefix}latest.txt")
