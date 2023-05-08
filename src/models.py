@@ -77,7 +77,7 @@ class Darklist(BaseModel, DAL):
         if address_id:
             self.address_id = address_id
         if ip_address:
-            self.address_id = uuid5(internals.DARKLIST_NAMESPACE, str(ip_address))
+            self.address_id = uuid5(internals.NAMESPACE, str(ip_address))
             self.ip_address = str(ip_address)
 
         response = services.aws.get_dynamodb(table_name=services.aws.Tables.EWS_DARKLIST, item_key={'address_id': str(self.address_id)})
