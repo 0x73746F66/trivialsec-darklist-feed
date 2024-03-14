@@ -1,0 +1,3 @@
+[submodule "feed-processors"]
+	path = feedlib
+	url = git@gitlab.com:trivialsec/feed-processors.git
